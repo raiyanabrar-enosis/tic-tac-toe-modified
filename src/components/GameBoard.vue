@@ -7,7 +7,7 @@
 			:id="'grid-' + item"
 			@click="cellClicked(item - 1)"
 		>
-			<div v-if="board.length">
+			<div v-if="board && board.length">
 				<span v-if="getCellValue(item) == 1">X</span>
 				<span v-if="getCellValue(item) == 2">O</span>
 			</div>
@@ -17,6 +17,7 @@
 
 <script setup>
 	import { ref, onMounted, computed } from "vue";
+	import { socket } from "@/utils/websocket.js";
 
 	const props = defineProps([
 		"N",
@@ -26,9 +27,10 @@
 		"checkWinner",
 		"handleWinner",
 	]);
-	const emit = defineEmits(["time-up"]);
+	const emit = defineEmits(["time-up", "game-id", "change-turn"]);
 	const N = ref(props.N);
 	const board = ref([]);
+	const gameID = ref();
 
 	const turn = computed(() => {
 		return props.turnNo;
@@ -37,6 +39,16 @@
 	const playable = props.playable;
 	const handleWinner = props.handleWinner;
 
+	const initBoard = async () => {
+		const res = await fetch("http://localhost:3000/game/new/" + N.value);
+		const gamedata = await res.json();
+		board.value = gamedata.data.board;
+		gameID.value = gamedata.data.id;
+		emit("game-id", gameID.value);
+	};
+
+	// -----------------
+
 	const setGridDimensions = () => {
 		let gridtempcols = "";
 
@@ -44,17 +56,8 @@
 			gridtempcols += "1fr ";
 		}
 		document.querySelector("#grid").style.gridTemplateColumns = gridtempcols;
-		board.value = initBoard(N.value);
-	};
 
-	const initBoard = (n) => {
-		let board = [];
-
-		for (let i = 0; i < n; i++) {
-			board[i] = new Array(n).fill(0);
-		}
-
-		return board;
+		initBoard();
 	};
 
 	const getBoardIndex = (cell) => {
@@ -67,83 +70,36 @@
 		return board.value[boardIndex[0]][boardIndex[1]];
 	};
 
-	const checkRowsMatch = (player) => {
-		let isMatching = true;
-
-		for (let i = 0; i < N.value; i++) {
-			isMatching = true;
-			for (let j = 0; j < N.value; j++) {
-				if (player != board.value[i][j]) isMatching = false;
-			}
-
-			if (isMatching) return true;
-		}
-
-		return isMatching;
+	const createMove = async (move, player) => {
+		const post = await fetch("http://localhost:3000/game/move/create", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				id: gameID.value,
+				move: move,
+				player: player,
+			}),
+		});
+		const res = await post.json();
+		socket.send(JSON.stringify(res.data));
+		return res.data;
 	};
 
-	const checkColumnsMatch = (player) => {
-		let isMatching = true;
-
-		for (let i = 0; i < N.value; i++) {
-			isMatching = true;
-			for (let j = 0; j < N.value; j++) {
-				if (player != board.value[j][i]) isMatching = false;
-			}
-
-			if (isMatching) return true;
-		}
-
-		return isMatching;
-	};
-
-	const checkLeftDiagonalsMatch = (player) => {
-		let isMatching = true;
-
-		for (let i = 0; i < N.value; i++) {
-			if (player != board.value[i][i]) isMatching = false;
-		}
-
-		return isMatching;
-	};
-
-	const checkRightDiagonalsMatch = (player) => {
-		let isMatching = true;
-
-		for (let i = 0; i < N.value; i++) {
-			if (player != board.value[i][N.value - i - 1]) isMatching = false;
-		}
-
-		return isMatching;
-	};
-
-	const checkWinner = (player) => {
-		return (
-			checkRowsMatch(player) ||
-			checkColumnsMatch(player) ||
-			checkLeftDiagonalsMatch(player) ||
-			checkRightDiagonalsMatch(player)
-		);
-	};
-
-	const checkDraw = () => {
-		for (let i = 0; i < N.value; i++) {
-			for (let j = 0; j < N.value; j++) {
-				if (board.value[i][j] == 0) return false;
-			}
-		}
-		return true;
-	};
-
-	const cellClicked = (cell) => {
+	const cellClicked = async (cell) => {
 		const boardIndex = getBoardIndex(cell);
 
 		if (!playable() || board.value[boardIndex[0]][boardIndex[1]] != 0) return;
 
 		board.value[boardIndex[0]][boardIndex[1]] = turn.value;
 
-		const isWinner = checkWinner(turn.value);
-		const isDraw = checkDraw();
+		const currentMove = await createMove(boardIndex, turn.value);
+
+		const isWinner = currentMove.isWinner;
+		const isDraw = currentMove.isDraw;
+
+		board.value = currentMove.boardstate;
 
 		if (isWinner) {
 			handleWinner(turn.value);
@@ -151,7 +107,7 @@
 			handleWinner(turn.value, true);
 		}
 
-		turnComplete();
+		turnComplete(currentMove.nextTurn);
 	};
 
 	onMounted(() => {
@@ -193,7 +149,7 @@
 			justify-content: center;
 
 			font-family: Arial, Helvetica, sans-serif;
-			font-size: 6rem;
+			font-size: 2.5rem;
 			font-weight: 300;
 
 			cursor: pointer;

@@ -1,17 +1,5 @@
 <template>
 	<div>
-		<dialog id="gameover" ref="gameOverDialog">
-			<p v-if="isDraw">Match is Tied</p>
-			<p v-else>Player {{ winner }} wins</p>
-			<div class="button-group">
-				<button class="btn btn-primary" @click="restartGame" id="btn-restart">
-					Restart
-				</button>
-				<button class="btn btn-outline" @click="closeModal" id="btn-close">
-					Close
-				</button>
-			</div>
-		</dialog>
 		<div id="timer">
 			<Stopwatch
 				:timer="timerValue"
@@ -43,12 +31,13 @@
 					:turnNo="turn"
 					:handleWinner="handleWinner"
 					:key="boardKey"
+					@game-id="setGameId"
 				></GameBoard>
 			</div>
 		</div>
 		<div class="gameinfo">
 			<p>
-				Player 1 (X):<span id="player1wins">{{ player1wins }}</span>
+				Player 1 (X): <span id="player1wins">{{ player1wins }}</span>
 			</p>
 			<p>
 				Player 2 (O): <span id="player2wins">{{ player2wins }}</span>
@@ -62,8 +51,6 @@
 	import Stopwatch from "@/components/Stopwatch.vue";
 	import GameBoard from "@/components/GameBoard.vue";
 
-	const gameOverDialog = ref(null);
-
 	const N = ref(3);
 	const player1wins = ref(0);
 	const player2wins = ref(0);
@@ -72,18 +59,18 @@
 	const isDraw = ref(false);
 	const isPlaying = ref(false);
 	const turn = ref(1);
+	const winner = ref(0);
+
 	const move = ref(1);
-	const winner = ref(null);
+	const steps = ref([]);
 
 	const boardKey = ref(0);
 	const timerKey = ref(0);
 
-	const isPlayerActive = (player) => {
-		return player == turn.value;
-	};
+	const gameID = ref();
 
-	const turnComplete = () => {
-		turn.value = turn.value == 1 ? 2 : 1;
+	const turnComplete = (nextTurn) => {
+		turn.value = nextTurn;
 		move.value++;
 		timerKey.value++;
 	};
@@ -97,12 +84,17 @@
 		handleWinner(turn.value);
 	};
 
+	const setGameId = (id) => {
+		gameID.value = id;
+	};
+
 	const handleWinner = (player, draw = false) => {
 		isGameOver.value = true;
 		isPlaying.value = false;
 
 		if (draw) {
 			isDraw.value = true;
+			saveFinishedGame();
 			return;
 		}
 
@@ -110,6 +102,42 @@
 		else player2wins.value++;
 
 		winner.value = player;
+
+		saveFinishedGame();
+	};
+
+	const getSteps = async () => {
+		const post = await fetch("http://localhost:3000/game/steps", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				id: gameID.value,
+			}),
+		});
+
+		const res = await post.json();
+		return res.data;
+	};
+
+	const saveFinishedGame = async () => {
+		const steps = await getSteps();
+
+		const post = await fetch("http://localhost:3000/game/save", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				winner: winner.value,
+				steps: steps,
+				moves: move.value,
+				boardSize: N.value,
+			}),
+		});
+
+		return await post.json();
 	};
 
 	const restartGame = () => {
@@ -117,7 +145,7 @@
 		isDraw.value = false;
 		isPlaying.value = true;
 
-		winner.value = null;
+		winner.value = 0;
 		turn.value = 1;
 		move.value = 1;
 
@@ -126,7 +154,7 @@
 	};
 
 	onMounted(() => {
-		isPlaying.value = true;
+		restartGame();
 	});
 </script>
 
