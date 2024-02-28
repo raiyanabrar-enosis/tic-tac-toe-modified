@@ -4,11 +4,6 @@ socket.onopen = function (e) {
 	console.log("[open] Connection established");
 };
 
-socket.onmessage = function (event) {
-	const msg = JSON.parse(event.data);
-	console.log(`[message] Data received from server: ${event.data}`);
-};
-
 socket.onclose = function (event) {
 	if (event.wasClean) {
 		console.log(

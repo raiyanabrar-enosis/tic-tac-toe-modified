@@ -17,7 +17,6 @@
 
 <script setup>
 	import { ref, onMounted, computed } from "vue";
-	import { socket } from "@/utils/websocket.js";
 
 	const props = defineProps([
 		"N",
@@ -26,8 +25,16 @@
 		"playable",
 		"checkWinner",
 		"handleWinner",
+		"isMultiplayer",
 	]);
-	const emit = defineEmits(["time-up", "game-id", "change-turn"]);
+	const emit = defineEmits([
+		"time-up",
+		"game-id",
+		"change-turn",
+		"multiplayer-filled",
+		"multiplayer-move-fn",
+		"player-move",
+	]);
 	const N = ref(props.N);
 	const board = ref([]);
 	const gameID = ref();
@@ -35,16 +42,51 @@
 	const turn = computed(() => {
 		return props.turnNo;
 	});
+
+	const isMultiplayer = props.isMultiplayer;
 	const turnComplete = props.turnComplete;
 	const playable = props.playable;
 	const handleWinner = props.handleWinner;
 
+	const multiplayerNo = ref();
+
 	const initBoard = async () => {
-		const res = await fetch("http://localhost:3000/game/new/" + N.value);
+		const res = await fetch(
+			`http://localhost:3000/game/new?boardsize=${N.value}&multiplayer=${isMultiplayer}`
+		);
 		const gamedata = await res.json();
 		board.value = gamedata.data.board;
 		gameID.value = gamedata.data.id;
 		emit("game-id", gameID.value);
+
+		if (isMultiplayer) {
+			// If players are filled
+			//  send socket to player 1 to begin
+			if (gamedata.data.start) {
+				emit("multiplayer-filled");
+				emit("multiplayer-move-fn", multiplayerMove);
+				multiplayerNo.value = 2;
+			} else {
+				multiplayerNo.value = 1;
+				emit("multiplayer-move-fn", multiplayerMove);
+			}
+		}
+	};
+
+	const createMove = async (move, player) => {
+		const post = await fetch("http://localhost:3000/game/move/create", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				id: gameID.value,
+				move: move,
+				player: player,
+			}),
+		});
+		const res = await post.json();
+		return res.data;
 	};
 
 	// -----------------
@@ -70,31 +112,16 @@
 		return board.value[boardIndex[0]][boardIndex[1]];
 	};
 
-	const createMove = async (move, player) => {
-		const post = await fetch("http://localhost:3000/game/move/create", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				id: gameID.value,
-				move: move,
-				player: player,
-			}),
-		});
-		const res = await post.json();
-		socket.send(JSON.stringify(res.data));
-		return res.data;
-	};
-
 	const cellClicked = async (cell) => {
 		const boardIndex = getBoardIndex(cell);
 
 		if (!playable() || board.value[boardIndex[0]][boardIndex[1]] != 0) return;
+		if (isMultiplayer && multiplayerNo.value != turn.value) return;
 
 		board.value[boardIndex[0]][boardIndex[1]] = turn.value;
 
 		const currentMove = await createMove(boardIndex, turn.value);
+		if (isMultiplayer) emit("player-move", currentMove);
 
 		const isWinner = currentMove.isWinner;
 		const isDraw = currentMove.isDraw;
@@ -102,12 +129,27 @@
 		board.value = currentMove.boardstate;
 
 		if (isWinner) {
-			handleWinner(turn.value);
+			handleWinner(turn.value, false, multiplayerNo.value);
 		} else if (isDraw) {
-			handleWinner(turn.value, true);
+			handleWinner(turn.value, true, multiplayerNo.value);
 		}
 
 		turnComplete(currentMove.nextTurn);
+	};
+
+	const multiplayerMove = (move) => {
+		board.value = move.boardstate;
+
+		const isWinner = move.isWinner;
+		const isDraw = move.isDraw;
+
+		if (isWinner) {
+			handleWinner(move.player, false, multiplayerNo.value);
+		} else if (isDraw) {
+			handleWinner(move.player, true, multiplayerNo.value);
+		}
+
+		turnComplete(move.nextTurn);
 	};
 
 	onMounted(() => {

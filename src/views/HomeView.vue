@@ -1,15 +1,25 @@
-<script setup></script>
+<script setup>
+	import { useRouter } from "vue-router";
+	const router = useRouter();
+
+	const navigateTo = (path, type) => {
+		router.push({
+			path: path,
+			query: { gametype: type },
+		});
+	};
+</script>
 
 <template>
 	<main>
 		<h1>Tic Tac Toe dashboard</h1>
 		<div class="grid">
-			<router-link to="/play">
+			<a @click="navigateTo('/play', 0)">
 				<div class="gridItem center-all">Create a game</div>
-			</router-link>
-			<router-link to="/play">
+			</a>
+			<a @click="navigateTo('/play', 1)">
 				<div class="gridItem center-all">Join a game</div>
-			</router-link>
+			</a>
 		</div>
 	</main>
 </template>

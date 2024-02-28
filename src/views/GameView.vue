@@ -1,13 +1,13 @@
 <template>
 	<div>
-		<div id="timer">
+		<!-- <div id="timer">
 			<Stopwatch
 				:timer="timerValue"
 				:playable="playable"
 				@time-up="timesUp"
 				:key="timerKey"
 			></Stopwatch>
-		</div>
+		</div> -->
 
 		<h1 class="gameHeader">Tic Tac Toe</h1>
 
@@ -26,12 +26,16 @@
 
 				<GameBoard
 					:N="N"
+					:turnNo="turn"
+					:isMultiplayer="isMultiplayer"
 					:turnComplete="turnComplete"
 					:playable="playable"
-					:turnNo="turn"
 					:handleWinner="handleWinner"
 					:key="boardKey"
 					@game-id="setGameId"
+					@multiplayer-filled="startMultiplayerGame"
+					@multiplayer-move-fn="setMultiplayerFn"
+					@player-move="setMultiplayerMove"
 				></GameBoard>
 			</div>
 		</div>
@@ -47,10 +51,16 @@
 </template>
 
 <script setup>
-	import { ref, onMounted, computed } from "vue";
+	import { ref, onMounted, onBeforeUnmount, onUnmounted, computed } from "vue";
+	import { useRouter } from "vue-router";
+
 	import Stopwatch from "@/components/Stopwatch.vue";
 	import GameBoard from "@/components/GameBoard.vue";
 
+	const router = useRouter();
+	const socket = ref();
+
+	const playerName = ref("");
 	const N = ref(3);
 	const player1wins = ref(0);
 	const player2wins = ref(0);
@@ -58,6 +68,7 @@
 	const isGameOver = ref(false);
 	const isDraw = ref(false);
 	const isPlaying = ref(false);
+	const isMultiplayer = ref(false);
 	const turn = ref(1);
 	const winner = ref(0);
 
@@ -68,6 +79,8 @@
 	const timerKey = ref(0);
 
 	const gameID = ref();
+
+	let multiplayerMoveFn = null;
 
 	const turnComplete = (nextTurn) => {
 		turn.value = nextTurn;
@@ -88,13 +101,14 @@
 		gameID.value = id;
 	};
 
-	const handleWinner = (player, draw = false) => {
+	const handleWinner = (player, draw = false, isHost) => {
 		isGameOver.value = true;
 		isPlaying.value = false;
+		console.log(isHost);
 
 		if (draw) {
 			isDraw.value = true;
-			saveFinishedGame();
+			saveFinishedGame(isHost);
 			return;
 		}
 
@@ -103,7 +117,7 @@
 
 		winner.value = player;
 
-		saveFinishedGame();
+		saveFinishedGame(isHost);
 	};
 
 	const getSteps = async () => {
@@ -121,7 +135,16 @@
 		return res.data;
 	};
 
-	const saveFinishedGame = async () => {
+	const saveFinishedGame = async (isHost) => {
+		console.log(isHost);
+		// Only winner can save
+		if (
+			isMultiplayer.value &&
+			((winner.value != 0 && isHost != winner.value) ||
+				(isHost == 2 && winner.value == 0))
+		)
+			return;
+
 		const steps = await getSteps();
 
 		const post = await fetch("http://localhost:3000/game/save", {
@@ -131,13 +154,76 @@
 			},
 			body: JSON.stringify({
 				winner: winner.value,
+				winnerName:
+					isMultiplayer.value && winner.value != 0
+						? playerName.value
+						: "Player " + winner.value,
+				isMultiplayer: isMultiplayer.value,
 				steps: steps,
 				moves: move.value,
 				boardSize: N.value,
 			}),
 		});
 
+		const res = await post.json();
+
+		return await removeGame();
+	};
+
+	const removeGame = async () => {
+		const steps = await getSteps();
+
+		const post = await fetch(
+			"http://localhost:3000/game/remove?id=" + gameID.value
+		);
+
 		return await post.json();
+	};
+
+	const checkMultiplayer = async () => {
+		const url = new URL(window.location.href);
+		const searchParams = url.searchParams;
+		const gameType = searchParams.get("gametype");
+
+		if (gameType == 1) {
+			isMultiplayer.value = true;
+			isPlaying.value = false;
+			// boardKey.value++;
+
+			const sock = await import("@/utils/websocket.js");
+			socket.value = sock.socket;
+			setupSockets();
+			askForName();
+		}
+	};
+
+	const startMultiplayerGame = async () => {
+		const interval = setInterval(() => {
+			if (socket.value.readyState) {
+				socket.value.send(
+					JSON.stringify({
+						id: gameID.value,
+						type: "START",
+					})
+				);
+				isPlaying.value = true;
+				clearInterval(interval);
+			}
+		}, 100);
+	};
+
+	const setMultiplayerFn = (fn) => {
+		multiplayerMoveFn = fn;
+	};
+
+	const setMultiplayerMove = (move) => {
+		socket.value.send(
+			JSON.stringify({
+				id: gameID.value,
+				type: "MOVE",
+				data: move,
+			})
+		);
 	};
 
 	const restartGame = () => {
@@ -153,9 +239,33 @@
 		timerKey.value++;
 	};
 
+	const setupSockets = () => {
+		socket.value.onmessage = function (event) {
+			const data = JSON.parse(event.data);
+
+			if (data.type == "START" && data.id == gameID.value) {
+				console.log("GAME CAN START NOWWWW!!!!");
+				isPlaying.value = true;
+			} else if (data.type == "MOVE") {
+				multiplayerMoveFn(data.data);
+			}
+		};
+	};
+
+	const askForName = () => {
+		const name = prompt("Enter your name");
+
+		if (name) playerName.value = name;
+	};
+
 	onMounted(() => {
 		restartGame();
+		checkMultiplayer();
 	});
+
+	window.onbeforeunload = function () {
+		if (!isMultiplayer.value) removeGame();
+	};
 </script>
 
 <style scoped>
