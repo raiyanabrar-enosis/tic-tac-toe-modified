@@ -10,10 +10,10 @@ socket.onclose = function (event) {
 			`[close] Connection closed cleanly, code=${event.code} reason=${event.reason}`
 		);
 	} else {
-		alert("[close] Connection died");
+		console.log("[close] Connection died");
 	}
 };
 
 socket.onerror = function (error) {
-	alert(`[error]`);
+	console.log(`[error] ${error}`);
 };

@@ -25,6 +25,7 @@
 		"playable",
 		"checkWinner",
 		"handleWinner",
+		"setMultiplayerPlayerNo",
 		"isMultiplayer",
 	]);
 	const emit = defineEmits([
@@ -47,6 +48,7 @@
 	const turnComplete = props.turnComplete;
 	const playable = props.playable;
 	const handleWinner = props.handleWinner;
+	const setMultiplayerPlayerNo = props.setMultiplayerPlayerNo;
 
 	const multiplayerNo = ref();
 
@@ -62,14 +64,15 @@
 		if (isMultiplayer) {
 			// If players are filled
 			//  send socket to player 1 to begin
+			// start property = true is only sent to the second player after successfully joining
 			if (gamedata.data.start) {
 				emit("multiplayer-filled");
-				emit("multiplayer-move-fn", multiplayerMove);
 				multiplayerNo.value = 2;
 			} else {
 				multiplayerNo.value = 1;
-				emit("multiplayer-move-fn", multiplayerMove);
 			}
+			emit("multiplayer-move-fn", multiplayerMove);
+			setMultiplayerPlayerNo(multiplayerNo.value);
 		}
 	};
 
