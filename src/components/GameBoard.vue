@@ -131,10 +131,8 @@
 
 		board.value = currentMove.boardstate;
 
-		if (isWinner) {
-			handleWinner(turn.value, false, multiplayerNo.value);
-		} else if (isDraw) {
-			handleWinner(turn.value, true, multiplayerNo.value);
+		if (isWinner || isDraw) {
+			handleWinner(currentMove);
 		}
 
 		turnComplete(currentMove.nextTurn);
@@ -142,15 +140,6 @@
 
 	const multiplayerMove = (move) => {
 		board.value = move.boardstate;
-
-		const isWinner = move.isWinner;
-		const isDraw = move.isDraw;
-
-		if (isWinner) {
-			handleWinner(move.player, false, multiplayerNo.value);
-		} else if (isDraw) {
-			handleWinner(move.player, true, multiplayerNo.value);
-		}
 
 		turnComplete(move.nextTurn);
 	};

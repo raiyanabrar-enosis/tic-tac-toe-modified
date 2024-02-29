@@ -17,10 +17,10 @@
 					<span id="restart" @click="restartGame">&#8635;</span>
 					<div v-if="isGameOver">
 						<p class="win" v-if="isDraw">Match is Tied</p>
-						<p class="win" v-else>Player {{ winner }} wins</p>
+						<p class="win" v-else>{{ getWinnerName }} wins</p>
 					</div>
 					<div v-else>
-						<p class="active">Player {{ turn }}'s turn</p>
+						<p class="active">{{ getTurnUser }}'s turn</p>
 					</div>
 				</div>
 
@@ -42,17 +42,19 @@
 		</div>
 		<div class="gameinfo">
 			<p>
-				Player 1 (X): <span id="player1wins">{{ player1wins }}</span>
+				{{ participators[0] }} (X):
+				<span id="player1wins">{{ player1wins }}</span>
 			</p>
 			<p>
-				Player 2 (O): <span id="player2wins">{{ player2wins }}</span>
+				{{ participators[1] }} (O):
+				<span id="player2wins">{{ player2wins }}</span>
 			</p>
 		</div>
 	</div>
 </template>
 
 <script setup>
-	import { ref, onMounted } from "vue";
+	import { ref, onMounted, computed } from "vue";
 
 	import Stopwatch from "@/components/Stopwatch.vue";
 	import GameBoard from "@/components/GameBoard.vue";
@@ -71,6 +73,18 @@
 	const multiplayerPlayerNo = ref(0); // Which player in the multiplayer game is it
 	const turn = ref(1); // Which player's turn is it
 	const winner = ref(0);
+	const winnerName = ref("");
+	const participators = ref(["Player 1", "Player 2"]);
+
+	const getWinnerName = computed(() => {
+		if (winner.value != 0 && winnerName.value == "")
+			return "Player " + winner.value;
+		else return winnerName.value;
+	});
+
+	const getTurnUser = computed(() => {
+		return participators.value[turn.value - 1];
+	});
 
 	const move = ref(1); // No. of moves passed
 	const steps = ref([]); // Stores each move in the game
@@ -101,22 +115,33 @@
 		gameID.value = id;
 	};
 
-	const handleWinner = (player, draw = false, isHost) => {
+	const handleWinner = (currentMove) => {
+		if (!playable()) return;
+
 		isGameOver.value = true;
 		isPlaying.value = false;
 
-		if (draw) {
-			isDraw.value = true;
-			saveFinishedGame(isHost);
-			return;
-		}
+		isDraw.value = currentMove.isDraw;
 
-		if (player == 1) player1wins.value++;
-		else player2wins.value++;
+		const winningPlayer = currentMove.winnerData.winner;
+		winnerName.value = currentMove.winnerData.winnerName;
 
-		winner.value = player;
+		if (winningPlayer == 1) player1wins.value++;
+		else if (winningPlayer == 2) player2wins.value++;
 
-		saveFinishedGame(isHost);
+		winner.value = winningPlayer;
+
+		socket.value.send(
+			JSON.stringify({
+				id: gameID.value,
+				type: "WINNER",
+				isdraw: currentMove.isDraw,
+				winner: currentMove.winnerData.winner,
+				winnerName: currentMove.winnerData.winnerName,
+			})
+		);
+
+		// saveFinishedGame(isHost);
 	};
 
 	const getSteps = async () => {
@@ -132,40 +157,6 @@
 
 		const res = await post.json();
 		return res.data;
-	};
-
-	const saveFinishedGame = async (isHost) => {
-		// Only winner can save in case of multiplayer
-		if (
-			isMultiplayer.value &&
-			((winner.value != 0 && isHost != winner.value) ||
-				(isHost == 2 && winner.value == 0))
-		)
-			return;
-
-		const steps = await getSteps();
-
-		const post = await fetch("http://localhost:3000/game/save", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				winner: winner.value,
-				winnerName:
-					isMultiplayer.value && winner.value != 0
-						? playerName.value
-						: "Player " + winner.value,
-				isMultiplayer: isMultiplayer.value,
-				steps: steps,
-				moves: move.value,
-				boardSize: N.value,
-			}),
-		});
-
-		const res = await post.json();
-
-		return await removeGame();
 	};
 
 	const removeGame = async () => {
@@ -208,6 +199,7 @@
 					})
 				);
 				isPlaying.value = true;
+				setUserName(playerName.value);
 				clearInterval(interval);
 			}
 		}, 100);
@@ -251,8 +243,17 @@
 			if (data.type == "START" && data.id == gameID.value) {
 				console.log("GAME CAN START NOWWWW!!!!");
 				isPlaying.value = true;
+				setUserName(playerName.value);
 			} else if (data.type == "MOVE") {
 				multiplayerMoveFn(data.data);
+			} else if (data.type == "WINNER") {
+				handleWinner({
+					isDraw: data.isdraw,
+					winnerData: {
+						winner: data.winner,
+						winnerName: data.winnerName,
+					},
+				});
 			}
 		};
 	};
@@ -261,7 +262,23 @@
 	const askForName = () => {
 		const name = prompt("Enter your name");
 
-		if (name) playerName.value = name;
+		if (name) {
+			playerName.value = name;
+		}
+	};
+
+	const setUserName = async (name) => {
+		const post = await fetch("http://localhost:3000/game/name", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				id: gameID.value,
+				name: name,
+				playerNo: multiplayerPlayerNo.value,
+			}),
+		});
 	};
 
 	onMounted(() => {
