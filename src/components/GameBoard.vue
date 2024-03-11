@@ -17,6 +17,9 @@
 
 <script setup>
 	import { ref, onMounted, computed } from "vue";
+	import { useRequestStore } from "@/stores/request";
+
+	const request = useRequestStore();
 
 	const props = defineProps([
 		"N",
@@ -53,19 +56,19 @@
 	const multiplayerNo = ref();
 
 	const initBoard = async () => {
-		const res = await fetch(
-			`http://localhost:3000/game/new?boardsize=${N.value}&multiplayer=${isMultiplayer}`
+		const gamedata = await request.get(
+			`/game/new?boardsize=${N.value}&multiplayer=${isMultiplayer}`
 		);
-		const gamedata = await res.json();
-		board.value = gamedata.data.board;
-		gameID.value = gamedata.data.id;
+
+		board.value = gamedata.board;
+		gameID.value = gamedata.id;
 		emit("game-id", gameID.value);
 
 		if (isMultiplayer) {
 			// If players are filled
-			//  send socket to player 1 to begin
+			// send socket to player 1 to begin
 			// start property = true is only sent to the second player after successfully joining
-			if (gamedata.data.start) {
+			if (gamedata.start) {
 				emit("multiplayer-filled");
 				multiplayerNo.value = 2;
 			} else {
@@ -74,22 +77,6 @@
 			emit("multiplayer-move-fn", multiplayerMove);
 			setMultiplayerPlayerNo(multiplayerNo.value);
 		}
-	};
-
-	const createMove = async (move, player) => {
-		const post = await fetch("http://localhost:3000/game/move/create", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				id: gameID.value,
-				move: move,
-				player: player,
-			}),
-		});
-		const res = await post.json();
-		return res.data;
 	};
 
 	// -----------------
@@ -123,7 +110,12 @@
 
 		board.value[boardIndex[0]][boardIndex[1]] = turn.value;
 
-		const currentMove = await createMove(boardIndex, turn.value);
+		const currentMove = await request.post("/game/move/create", {
+			id: gameID.value,
+			move: boardIndex,
+			player: turn.value,
+		});
+
 		if (isMultiplayer) emit("player-move", currentMove);
 
 		const isWinner = currentMove.isWinner;

@@ -55,6 +55,9 @@
 
 <script setup>
 	import { ref, onMounted, computed } from "vue";
+	import { useRequestStore } from "@/stores/request";
+
+	const request = useRequestStore();
 
 	import Stopwatch from "@/components/Stopwatch.vue";
 	import GameBoard from "@/components/GameBoard.vue";
@@ -108,7 +111,7 @@
 
 	const timesUp = () => {
 		turn.value = turn.value == 1 ? 2 : 1;
-		handleWinner(turn.value);
+		handleWinner();
 	};
 
 	const setGameId = (id) => {
@@ -121,50 +124,35 @@
 		isGameOver.value = true;
 		isPlaying.value = false;
 
-		isDraw.value = currentMove.isDraw;
+		isDraw.value = currentMove ? currentMove.isDraw : false;
 
-		const winningPlayer = currentMove.winnerData.winner;
-		winnerName.value = currentMove.winnerData.winnerName;
+		const winningPlayer = currentMove
+			? currentMove.winnerData.winner
+			: turn.value;
+		winnerName.value = currentMove
+			? currentMove.winnerData.winnerName
+			: participators.value[turn.value - 1];
 
 		if (winningPlayer == 1) player1wins.value++;
 		else if (winningPlayer == 2) player2wins.value++;
 
 		winner.value = winningPlayer;
 
+		if (!isMultiplayer.value) return;
+
 		socket.value.send(
 			JSON.stringify({
 				id: gameID.value,
 				type: "WINNER",
-				isdraw: currentMove.isDraw,
-				winner: currentMove.winnerData.winner,
-				winnerName: currentMove.winnerData.winnerName,
+				isdraw: isDraw.value,
+				winner: winningPlayer,
+				winnerName: winnerName.value,
 			})
 		);
-
-		// saveFinishedGame(isHost);
-	};
-
-	const getSteps = async () => {
-		const post = await fetch("http://localhost:3000/game/steps", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				id: gameID.value,
-			}),
-		});
-
-		const res = await post.json();
-		return res.data;
 	};
 
 	const removeGame = async () => {
-		const post = await fetch(
-			"http://localhost:3000/game/remove?id=" + gameID.value
-		);
-
-		return await post.json();
+		request.get("/game/remove?id=" + gameID.value);
 	};
 
 	// Check if the game is a multiplayer game
@@ -268,16 +256,10 @@
 	};
 
 	const setUserName = async (name) => {
-		const post = await fetch("http://localhost:3000/game/name", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				id: gameID.value,
-				name: name,
-				playerNo: multiplayerPlayerNo.value,
-			}),
+		return request.post("/game/name", {
+			id: gameID.value,
+			name: name,
+			playerNo: multiplayerPlayerNo.value,
 		});
 	};
 
