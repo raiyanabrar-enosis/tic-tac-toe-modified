@@ -1,4 +1,4 @@
-export let socket = new WebSocket("ws://localhost:6969");
+export let socket = new WebSocket("ws://localhost:8888");
 
 socket.onopen = function (e) {
 	console.log("[open] Connection established");
